@@ -7,7 +7,7 @@
 
 ## 🚀 快速使用指南  
 ### 1. 插件安装  
-- 进入 AstrBot 插件市场，搜索并安装 **「Kook 适配器」**。  
+- 进入 AstrBot 插件市场，搜索并安装 **「astrbot_plugin_kook_adapter」**。  
 
 
 ### 2. 适配器配置  
