@@ -44,4 +44,4 @@
 
 
 ## 📚 支持与帮助  
-- 发现 Bug？有好点子？请随时通过 [GitHub Issues](https://github.com/lxfight/astrbot_plugin_mnemosyne/issues) 告诉我们。每一条反馈我们都会认真对待。  
+- 发现 Bug？有好点子？请随时通过 [GitHub Issues](https://github.com/wuyan1003/astrbot_plugin_kook_adapter/issues) 告诉我们。每一条反馈我们都会认真对待。  
