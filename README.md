@@ -1,8 +1,6 @@
-# helloworld
+# 别看了，还没写
 
-AstrBot 插件模板
 
-A template plugin for AstrBot plugin feature
 
 # 支持
 
