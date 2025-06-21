@@ -18,6 +18,7 @@ class KookPlatformAdapter(Platform):
         self.config = platform_config
         self.settings = platform_settings
         self.client = None
+        self._reconnect_task = None
 
     async def send_by_session(self, session: MessageSesion, message_chain: MessageChain):
         await super().send_by_session(session, message_chain)
@@ -33,12 +34,29 @@ class KookPlatformAdapter(Platform):
             logger.info(f"KOOK 收到数据: {data}")
             if 'd' in data and data['s'] == 0:
                 event_type = data['d'].get('type')
-                # type=9（文本）和type=10（卡片）
+                # 支持type=9（文本）和type=10（卡片）
                 if event_type in (9, 10):
                     abm = await self.convert_message(data['d'])
                     await self.handle_msg(abm)
         self.client = KookClient(self.config['token'], on_received)
-        await self.client.connect()
+        # 启动定时重连任务
+        self._reconnect_task = asyncio.create_task(self._keep_kook_alive())
+        while True:
+            try:
+                await self.client.connect()
+            except Exception as e:
+                logger.error(f"[KOOK] WebSocket 监听异常: {e}")
+                await asyncio.sleep(5)
+
+    async def _keep_kook_alive(self):
+        while True:
+            await asyncio.sleep(3600)  # 重连kook，默认每小时
+            try:
+                logger.info("[KOOK] 定时重连尝试...")
+                await self.client.close()
+                logger.info("[KOOK] 定时重连成功，等待下一次自动重连")
+            except Exception as e:
+                logger.error(f"[KOOK] 定时重连失败: {e}")
 
     async def convert_message(self, data: dict) -> AstrBotMessage:
         abm = AstrBotMessage()
