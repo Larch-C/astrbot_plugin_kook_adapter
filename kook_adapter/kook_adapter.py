@@ -10,7 +10,7 @@ import json
 import re
 
 @register_platform_adapter("kook", "KOOK 适配器", default_config_tmpl={
-    "token": "your_kook_bot_token"
+    "token": "你kook获取到的机器人token"
 })
 class KookPlatformAdapter(Platform):
     def __init__(self, platform_config: dict, platform_settings: dict, event_queue: asyncio.Queue) -> None:
@@ -19,6 +19,8 @@ class KookPlatformAdapter(Platform):
         self.settings = platform_settings
         self.client = None
         self._reconnect_task = None
+        self.running = False
+        self._main_task = None
 
     async def send_by_session(self, session: MessageSesion, message_chain: MessageChain):
         await super().send_by_session(session, message_chain)
@@ -30,33 +32,101 @@ class KookPlatformAdapter(Platform):
         )
 
     async def run(self):
+        """主运行循环"""
+        self.running = True
+        logger.info("[KOOK] 启动KOOK适配器")
+        
         async def on_received(data):
-            logger.info(f"KOOK 收到数据: {data}")
+            logger.debug(f"KOOK 收到数据: {data}")
             if 'd' in data and data['s'] == 0:
                 event_type = data['d'].get('type')
                 # 支持type=9（文本）和type=10（卡片）
                 if event_type in (9, 10):
-                    abm = await self.convert_message(data['d'])
-                    await self.handle_msg(abm)
+                    try:
+                        abm = await self.convert_message(data['d'])
+                        await self.handle_msg(abm)
+                    except Exception as e:
+                        logger.error(f"[KOOK] 消息处理异常: {e}")
+        
         self.client = KookClient(self.config['token'], on_received)
-        # 启动定时重连任务
-        self._reconnect_task = asyncio.create_task(self._keep_kook_alive())
-        while True:
+        
+        # 启动主循环
+        self._main_task = asyncio.create_task(self._main_loop())
+        
+        try:
+            await self._main_task
+        except asyncio.CancelledError:
+            logger.info("[KOOK] 适配器被取消")
+        except Exception as e:
+            logger.error(f"[KOOK] 适配器运行异常: {e}")
+        finally:
+            self.running = False
+            await self._cleanup()
+
+    async def _main_loop(self):
+        """主循环，处理连接和重连"""
+        consecutive_failures = 0
+        max_consecutive_failures = 5
+        
+        while self.running:
             try:
-                await self.client.connect()
+                logger.info("[KOOK] 尝试连接KOOK服务器...")
+                
+                # 尝试连接
+                success = await self.client.connect()
+                
+                if success:
+                    logger.info("[KOOK] 连接成功，开始监听消息")
+                    consecutive_failures = 0  # 重置失败计数
+                    
+                    # 等待连接结束（可能是正常关闭或异常）
+                    while self.client.running and self.running:
+                        await asyncio.sleep(1)
+                        
+                    if self.running:
+                        logger.warning("[KOOK] 连接断开，准备重连")
+                        
+                else:
+                    consecutive_failures += 1
+                    logger.error(f"[KOOK] 连接失败，连续失败次数: {consecutive_failures}")
+                    
+                    if consecutive_failures >= max_consecutive_failures:
+                        logger.error("[KOOK] 连续失败次数过多，停止重连")
+                        break
+                    
+                    # 等待一段时间后重试
+                    wait_time = min(2 ** consecutive_failures, 60)  # 指数退避，最大60秒
+                    logger.info(f"[KOOK] 等待 {wait_time} 秒后重试...")
+                    await asyncio.sleep(wait_time)
+                    
             except Exception as e:
-                logger.error(f"[KOOK] WebSocket 监听异常: {e}")
+                consecutive_failures += 1
+                logger.error(f"[KOOK] 主循环异常: {e}")
+                
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.error("[KOOK] 连续异常次数过多，停止重连")
+                    break
+                
                 await asyncio.sleep(5)
 
-    async def _keep_kook_alive(self):
-        while True:
-            await asyncio.sleep(3600)  # 重连kook，默认每小时
+    async def _cleanup(self):
+        """清理资源"""
+        logger.info("[KOOK] 开始清理资源")
+        
+        if self.client:
             try:
-                logger.info("[KOOK] 定时重连尝试...")
                 await self.client.close()
-                logger.info("[KOOK] 定时重连成功，等待下一次自动重连")
             except Exception as e:
-                logger.error(f"[KOOK] 定时重连失败: {e}")
+                logger.error(f"[KOOK] 关闭客户端异常: {e}")
+        
+        if self._main_task and not self._main_task.done():
+            self._main_task.cancel()
+            try:
+                await self._main_task
+            except asyncio.CancelledError:
+                pass
+        
+        logger.info("[KOOK] 资源清理完成")
 
     async def convert_message(self, data: dict) -> AstrBotMessage:
         abm = AstrBotMessage()
