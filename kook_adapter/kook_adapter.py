@@ -27,8 +27,9 @@ class KookPlatformAdapter(Platform):
 
     def meta(self) -> PlatformMetadata:
         return PlatformMetadata(
-            "kook",
-            "KOOK 适配器",
+            name="kook",
+            description="KOOK 适配器",
+            id=self.config.get("id")
         )
 
     async def run(self):
